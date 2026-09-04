@@ -77,12 +77,106 @@ export const CounsellorChatbot: React.FC<CounsellorChatbotProps> = ({
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isSending])
 
-  // ── Load Tailored Suggestions from Backend ───────────────────────────────
+async function callDirectOpenRouterSuggestions(
+  answers: Record<string, string>,
+  language: string,
+  distressLevel: string,
+  counsellorId: string
+) {
+  try {
+    const isHindi = language.toLowerCase().includes('hi') && !language.toLowerCase().includes('hinglish')
+    const isHinglish = language.toLowerCase().includes('hinglish')
+
+    const prompt = `You are Counsellor ${counsellorId} at India's National Helpline Against Atrocities (NHAA - 14566).
+A citizen just finished an assessment with distress level "${distressLevel}".
+Their assessment answers are:
+${JSON.stringify(answers, null, 2)}
+
+Target Language: ${isHindi ? 'Formal Hindi (Devanagari)' : isHinglish ? 'Conversational Roman Hinglish' : 'Empathetic English'}
+
+Generate a JSON response tailored strictly to what the citizen answered:
+{
+  "greeting": "Empathetic 2-sentence greeting directly acknowledging their specific answers (e.g. mentioning the threats, sleep problems, or fear they described).",
+  "identified_issues": ["Specific Issue 1 derived from answers", "Specific Issue 2", "Specific Issue 3"],
+  "suggestions": [
+    {
+      "id": "sug-1",
+      "category": "legal",
+      "title": "Short title",
+      "badge": "Legal & Protection",
+      "description": "Specific action they can take under PoA Act / NHAA protection based on the threats/slurs they mentioned.",
+      "action_prompt": "Prompt user can click to ask more about this"
+    },
+    {
+      "id": "sug-2",
+      "category": "coping",
+      "title": "Short title",
+      "badge": "Trauma & Sleep Regulation",
+      "description": "Specific somatic grounding or psychological coping advice addressing their sleep or anxiety.",
+      "action_prompt": "Prompt user can click to ask about coping"
+    },
+    {
+      "id": "sug-3",
+      "category": "counselling",
+      "title": "Short title",
+      "badge": "Confidential Counseling",
+      "description": "How 1-on-1 confidential tele-counseling can help them safely recover.",
+      "action_prompt": "Prompt user can click to ask about counseling"
+    }
+  ],
+  "recommended_prompts": [
+    "Quick question 1 user might want to ask next",
+    "Quick question 2",
+    "Quick question 3"
+  ]
+}
+Return only valid JSON.`
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${DIRECT_OPENROUTER_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+      }),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      const content = data?.choices?.[0]?.message?.content
+      if (content) {
+        const parsed = JSON.parse(content)
+        if (parsed.greeting && parsed.suggestions && parsed.suggestions.length > 0) {
+          return {
+            greeting: parsed.greeting,
+            identified_issues: parsed.identified_issues || [],
+            counsellor_id: counsellorId,
+            distress_level: distressLevel,
+            suggestions: parsed.suggestions,
+            recommended_prompts: parsed.recommended_prompts || [],
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Direct OpenRouter suggestions failed:', e)
+  }
+  return null
+}
+
+  // ── Load Tailored Suggestions from Backend or Direct OpenRouter AI ────────
   useEffect(() => {
     let isMounted = true
 
     const fetchSuggestions = async () => {
       setIsLoading(true)
+      let data: any = null
+
       try {
         const res = await fetch('/api/counsellor/suggestions', {
           method: 'POST',
@@ -94,68 +188,77 @@ export const CounsellorChatbot: React.FC<CounsellorChatbotProps> = ({
           }),
         })
 
-        if (!res.ok) throw new Error('Failed to fetch suggestions')
-        const data = await res.json()
-
-        if (isMounted) {
-          setIdentifiedIssues(data.identified_issues || [])
-          setSuggestedPrompts(data.recommended_prompts || [])
-
-          const welcomeMsg: ChatMessage = {
-            id: 'counsellor-welcome',
-            sender: 'counsellor',
-            text: data.greeting,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            suggestions: data.suggestions || [],
-          }
-          setMessages([welcomeMsg])
-
-          // Speak initial greeting if not muted
-          if (!isVoiceMuted && data.greeting) {
-            audioEngine.speakText(data.greeting, language)
-          }
+        if (res.ok) {
+          data = await res.json()
         }
       } catch (err) {
-        console.warn('Fallback counsellor load:', err)
-        if (isMounted) {
-          const fallbackGreeting =
-            language === 'hi'
-              ? `नमस्ते। मैं काउंसलर ${counsellorId} हूँ। मैंने आपके उत्तरों की समीक्षा की है और आपकी सुरक्षा व राहत के लिए निम्नलिखित सुझाव तैयार किए हैं:`
-              : language === 'hinglish'
-              ? `Namaste. Main Counsellor ${counsellorId} hoon. Maine aapke assessment ke answers review kiye hain aur aapke liye targeted suggestions prepare kiye hain:`
-              : `Hello. I am Counsellor ${counsellorId}. I have reviewed your assessment answers and prepared personalized suggestions for your protection and emotional coping:`
-
-          const fallbackMsg: ChatMessage = {
-            id: 'counsellor-welcome',
-            sender: 'counsellor',
-            text: fallbackGreeting,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            suggestions: [
-              {
-                id: 'sug-1',
-                category: 'legal',
-                title: 'Immediate Legal Protection & SC/ST PoA Act',
-                badge: 'Legal Recourse',
-                description:
-                  'Based on the threats you noted, NHAA can assign a District Nodal Officer to coordinate Zero-FIR and police escort.',
-                action_prompt: 'How can NHAA protect my family right now?',
-              },
-              {
-                id: 'sug-2',
-                category: 'coping',
-                title: 'Trauma & Sleep Stabilization Protocol',
-                badge: 'Psychological Relief',
-                description:
-                  'Techniques including 5-4-3-2-1 sensory grounding and diaphragmatic breathing to stop night panics and intrusive thoughts.',
-                action_prompt: 'Guide me through sleep calming exercises.',
-              },
-            ],
-          }
-          setMessages([fallbackMsg])
-        }
-      } finally {
-        if (isMounted) setIsLoading(false)
+        console.warn('Backend suggestions fetch error, attempting direct AI generation:', err)
       }
+
+      // If backend failed or was unreachable, generate live tailored suggestions with direct OpenRouter AI
+      if (!data || !data.suggestions || data.suggestions.length === 0) {
+        data = await callDirectOpenRouterSuggestions(assessmentAnswers, language, distressLevel, counsellorId)
+      }
+
+      if (isMounted && data && data.suggestions && data.suggestions.length > 0) {
+        setIdentifiedIssues(data.identified_issues || [])
+        setSuggestedPrompts(data.recommended_prompts || [])
+
+        const welcomeMsg: ChatMessage = {
+          id: 'counsellor-welcome',
+          sender: 'counsellor',
+          text: data.greeting,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          suggestions: data.suggestions || [],
+        }
+        setMessages([welcomeMsg])
+
+        if (!isVoiceMuted && data.greeting) {
+          try {
+            audioEngine.speakText(data.greeting, language)
+          } catch (e) {
+            console.warn('Speech error on welcome:', e)
+          }
+        }
+      } else if (isMounted) {
+        // Fallback if no AI connection
+        const fallbackGreeting =
+          language === 'hi'
+            ? `नमस्ते। मैं काउंसलर ${counsellorId} हूँ। मैंने आपके उत्तरों की समीक्षा की है और आपकी सुरक्षा व राहत के लिए निम्नलिखित सुझाव तैयार किए हैं:`
+            : language === 'hinglish'
+            ? `Namaste. Main Counsellor ${counsellorId} hoon. Maine aapke assessment ke answers review kiye hain aur aapke liye targeted suggestions prepare kiye hain:`
+            : `Hello. I am Counsellor ${counsellorId}. I have reviewed your assessment answers and prepared personalized suggestions for your protection and emotional coping:`
+
+        const fallbackMsg: ChatMessage = {
+          id: 'counsellor-welcome',
+          sender: 'counsellor',
+          text: fallbackGreeting,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          suggestions: [
+            {
+              id: 'sug-1',
+              category: 'legal',
+              title: 'Immediate Legal Protection & SC/ST PoA Act',
+              badge: 'Legal Recourse',
+              description:
+                'Based on the threats you noted, NHAA can assign a District Nodal Officer to coordinate Zero-FIR and police escort.',
+              action_prompt: 'How can NHAA protect my family right now?',
+            },
+            {
+              id: 'sug-2',
+              category: 'coping',
+              title: 'Trauma & Sleep Stabilization Protocol',
+              badge: 'Psychological Relief',
+              description:
+                'Techniques including 5-4-3-2-1 sensory grounding and diaphragmatic breathing to stop night panics and intrusive thoughts.',
+              action_prompt: 'Guide me through sleep calming exercises.',
+            },
+          ],
+        }
+        setMessages([fallbackMsg])
+      }
+
+      if (isMounted) setIsLoading(false)
     }
 
     fetchSuggestions()
@@ -282,13 +385,18 @@ Keep response concise (2-4 sentences), non-judgmental, and validating.`,
       setMessages((prev) => [...prev, counsellorReply])
 
       if (!isVoiceMuted && replyText) {
-        audioEngine.speakText(replyText, language)
+        try {
+          audioEngine.speakText(replyText, language)
+        } catch (audioErr) {
+          console.warn('Speech synthesis error:', audioErr)
+        }
       }
-    } catch {
+    } catch (err) {
+      console.error('Send message error:', err)
       const errorMsg: ChatMessage = {
         id: `err-${Date.now()}`,
         sender: 'counsellor',
-        text: 'Thank you for sharing. Please remember that your safety is protected under law and our 24x7 helpline 14566 is always active.',
+        text: 'Main aapki baat dhyan se sun raha hoon. Kripya batayein, main aapki aur kya madad kar sakta hoon?',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
       setMessages((prev) => [...prev, errorMsg])

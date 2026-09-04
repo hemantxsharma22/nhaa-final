@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { assessmentService } from '../../server/assessmentService.js'
+import { assessmentService } from '../../server/assessmentService'
 
 process.env.OPENROUTER_API_KEY =
   process.env.OPENROUTER_API_KEY ||

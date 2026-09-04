@@ -339,7 +339,7 @@ app.use('/api/index', apiRouter)
 if (!process.env.VERCEL) {
   const distPath = path.resolve(__dirname2, '..', 'dist')
   app.use(express.static(distPath))
-  app.get('*', (_req, res) => {
+  app.use((_req, res) => {
     res.sendFile(path.join(distPath, 'index.html'))
   })
 

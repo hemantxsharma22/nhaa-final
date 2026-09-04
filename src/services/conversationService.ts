@@ -70,9 +70,10 @@ export async function sendConversationMessage(
 // ── Counsellor chat ────────────────────────────────────────────────────────
 
 const DIRECT_OPENROUTER_KEY =
-  typeof atob !== 'undefined'
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_OPENROUTER_API_KEY) ||
+  (typeof atob !== 'undefined'
     ? atob('c2stb3ItdjEtOTlhYTg5ZDEyZDMzMTUzNzU1OWRkNjE4MGJkNmZmYWRmNWFiNWUwNDNlZTFjZmVmMzI2M2U2NDNmYzFiNjA1Mw==')
-    : ''
+    : '')
 
 export async function sendCounsellorMessage(
   userMessage: string,

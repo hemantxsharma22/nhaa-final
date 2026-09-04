@@ -167,9 +167,10 @@ export const CounsellorChatbot: React.FC<CounsellorChatbotProps> = ({
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
 const DIRECT_OPENROUTER_KEY =
-  typeof atob !== 'undefined'
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_OPENROUTER_API_KEY) ||
+  (typeof atob !== 'undefined'
     ? atob('c2stb3ItdjEtOTlhYTg5ZDEyZDMzMTUzNzU1OWRkNjE4MGJkNmZmYWRmNWFiNWUwNDNlZTFjZmVmMzI2M2U2NDNmYzFiNjA1Mw==')
-    : ''
+    : '')
 
 async function callDirectOpenRouter(
   history: { role: 'user' | 'assistant'; content: string }[],

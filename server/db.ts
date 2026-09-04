@@ -43,10 +43,12 @@ interface DatabaseSchema {
   chatSessions: Record<string, ChatSessionRecord>
 }
 
-// Persistent JSON storage file
+// Persistent JSON storage file (use /tmp on Vercel serverless)
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const DB_FILE = path.join(__dirname, 'nhaa_database.json')
+const DB_FILE = process.env.VERCEL
+  ? path.join('/tmp', 'nhaa_database.json')
+  : path.join(__dirname, 'nhaa_database.json')
 
 class Database {
   private data: DatabaseSchema = {

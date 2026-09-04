@@ -319,19 +319,21 @@ app.post('/api/assessment/converse', async (req, res) => {
   res.json(result)
 })
 
-// Serve compiled frontend in production
-const distPath = path.resolve(__dirname2, '..', 'dist')
-app.use(express.static(distPath))
+// In standalone/Render production, serve compiled frontend
+if (!process.env.VERCEL) {
+  const distPath = path.resolve(__dirname2, '..', 'dist')
+  app.use(express.static(distPath))
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'))
+  })
 
-// All unhandled routes serve index.html for React Router SPA
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'))
-})
+  const HOST = process.env.HOST || '0.0.0.0'
+  app.listen(Number(PORT), HOST, () => {
+    console.log(`NHAA Secure Backend API running on http://${HOST}:${PORT}`)
+    console.log(`OpenRouter Key: ${process.env.OPENROUTER_API_KEY ? 'Configured' : 'DEMO MODE (Local Heuristics Active)'}`)
+    console.log(`Model: ${process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini'}`)
+  })
+}
 
-const HOST = process.env.HOST || '0.0.0.0'
-app.listen(Number(PORT), HOST, () => {
-  console.log(`NHAA Secure Backend API running on http://${HOST}:${PORT}`)
-  console.log(`OpenRouter Key: ${process.env.OPENROUTER_API_KEY ? 'Configured' : 'DEMO MODE (Local Heuristics Active)'}`)
-  console.log(`Model: ${process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini'}`)
-})
+export default app
 

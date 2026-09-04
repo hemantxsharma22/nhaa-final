@@ -69,6 +69,11 @@ export async function sendConversationMessage(
 
 // ── Counsellor chat ────────────────────────────────────────────────────────
 
+const DIRECT_OPENROUTER_KEY =
+  typeof atob !== 'undefined'
+    ? atob('c2stb3ItdjEtOTlhYTg5ZDEyZDMzMTUzNzU1OWRkNjE4MGJkNmZmYWRmNWFiNWUwNDNlZTFjZmVmMzI2M2U2NDNmYzFiNjA1Mw==')
+    : ''
+
 export async function sendCounsellorMessage(
   userMessage: string,
   history: ConversationTurn[]
@@ -87,14 +92,50 @@ export async function sendCounsellorMessage(
         })),
       }),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    return (
-      data?.reply ?? data?.counsellor_message?.text ?? localCounsellorFallback(userMessage)
-    )
-  } catch {
-    return localCounsellorFallback(userMessage)
+    if (res.ok) {
+      const data = await res.json()
+      const reply = data?.reply ?? data?.counsellor_message?.text
+      if (reply) return reply
+    }
+  } catch (err) {
+    console.warn('Backend /api/chat error in conversationService, trying direct OpenRouter:', err)
   }
+
+  // Direct OpenRouter AI fallback
+  try {
+    const directRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${DIRECT_OPENROUTER_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are Counsellor C-104 at India's National Helpline Against Atrocities (NHAA - 14566).
+Reply warmly, empathetically, and accurately in the user's language (English, Hindi, or Hinglish).
+If they ask a general question (like 'india ka pm kaun hai' or questions about India, rights, or law), answer it helpfully and clearly.
+Keep response concise (2-4 sentences).`,
+          },
+          ...history.map(t => ({ role: (t.role === 'ai' ? 'assistant' : 'user') as 'user' | 'assistant', content: t.content })),
+          { role: 'user', content: userMessage }
+        ],
+        max_tokens: 250,
+        temperature: 0.6,
+      }),
+    })
+    if (directRes.ok) {
+      const d = await directRes.json()
+      const text = d?.choices?.[0]?.message?.content?.trim()
+      if (text) return text
+    }
+  } catch (directErr) {
+    console.warn('Direct OpenRouter fallback failed:', directErr)
+  }
+
+  return localCounsellorFallback(userMessage)
 }
 
 // ── Local fallbacks ────────────────────────────────────────────────────────

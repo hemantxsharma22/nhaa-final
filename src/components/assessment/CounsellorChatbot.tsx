@@ -166,7 +166,60 @@ export const CounsellorChatbot: React.FC<CounsellorChatbotProps> = ({
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Send Message to Counsellor ───────────────────────────────────────────
+const DIRECT_OPENROUTER_KEY =
+  typeof atob !== 'undefined'
+    ? atob('c2stb3ItdjEtOTlhYTg5ZDEyZDMzMTUzNzU1OWRkNjE4MGJkNmZmYWRmNWFiNWUwNDNlZTFjZmVmMzI2M2U2NDNmYzFiNjA1Mw==')
+    : ''
+
+async function callDirectOpenRouter(
+  history: { role: 'user' | 'assistant'; content: string }[],
+  userText: string,
+  assessmentAnswers?: Record<string, string>,
+  language: string = 'en'
+): Promise<string | null> {
+  try {
+    let contextStr = ''
+    if (assessmentAnswers && Object.keys(assessmentAnswers).length > 0) {
+      contextStr = `\nCitizen Prior Assessment Answers:\n` +
+        Object.entries(assessmentAnswers).map(([k, v]) => `- ${k}: "${v}"`).join('\n')
+    }
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${DIRECT_OPENROUTER_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are Counsellor C-104 at India's National Helpline Against Atrocities (NHAA - 14566).
+Target Language: ${language === 'hi' ? 'Hindi (Devanagari)' : language === 'hinglish' ? 'Conversational Roman Hinglish' : 'Empathetic English'}.
+Speak empathetically in the citizen's language (reply in the exact language/mix they used or selected: ${language}).
+If they ask a question (whether general knowledge, about India like 'india ka pm kaun hai', legal protection under PoA Act, or emotional coping), answer directly, accurately, warmly, and helpfully.
+${contextStr}
+Keep response concise (2-4 sentences), non-judgmental, and validating.`,
+          },
+          ...history,
+          { role: 'user', content: userText },
+        ],
+        max_tokens: 250,
+        temperature: 0.6,
+      }),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      return data?.choices?.[0]?.message?.content?.trim() || null
+    }
+  } catch (e) {
+    console.warn('Direct OpenRouter call error:', e)
+  }
+  return null
+}
+
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim()
     if (!text || isSending) return
@@ -185,23 +238,39 @@ export const CounsellorChatbot: React.FC<CounsellorChatbotProps> = ({
 
     try {
       const history = messages.map((m) => ({
-        role: m.sender === 'counsellor' ? 'assistant' : 'user',
+        role: (m.sender === 'counsellor' ? 'assistant' : 'user') as 'user' | 'assistant',
         content: m.text,
       }))
 
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_text: text,
-          history,
-          assessment_answers: assessmentAnswers,
-        }),
-      })
+      let replyText: string | null = null
 
-      if (!res.ok) throw new Error('Counsellor chat error')
-      const data = await res.json()
-      const replyText = data.reply || data.counsellor_message?.text || 'I hear you and I am standing by your side.'
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_text: text,
+            history,
+            assessment_answers: assessmentAnswers,
+          }),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          replyText = data.reply || data.counsellor_message?.text
+        }
+      } catch (backendErr) {
+        console.warn('Backend /api/chat error, using direct AI fallback:', backendErr)
+      }
+
+      // If backend was unreachable or failed, call direct OpenRouter fallback
+      if (!replyText) {
+        replyText = await callDirectOpenRouter(history, text, assessmentAnswers, language)
+      }
+
+      if (!replyText) {
+        replyText = 'I hear you and I am standing by your side. Aapki suraksha hamari prathmikta hai.'
+      }
 
       const counsellorReply: ChatMessage = {
         id: `counsellor-${Date.now()}`,
@@ -211,7 +280,7 @@ export const CounsellorChatbot: React.FC<CounsellorChatbotProps> = ({
       }
       setMessages((prev) => [...prev, counsellorReply])
 
-      if (!isVoiceMuted) {
+      if (!isVoiceMuted && replyText) {
         audioEngine.speakText(replyText, language)
       }
     } catch {

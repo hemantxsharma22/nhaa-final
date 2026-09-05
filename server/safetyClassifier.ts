@@ -9,6 +9,7 @@
 //      unreachable (e.g. Python not installed, demo mode, cold start)
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -46,8 +47,6 @@ let sidecarStartedAt = 0
 function readMetaSync(): { threshold: number; version: string; labels: Record<string, string> } | null {
   if (cachedMeta) return cachedMeta
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('node:fs') as typeof import('node:fs')
     if (!fs.existsSync(META_JSON)) return null
     const raw = fs.readFileSync(META_JSON, 'utf8')
     const parsed = JSON.parse(raw)
@@ -189,8 +188,6 @@ async function ensureSidecar(): Promise<void> {
 
 export function safetyStatus(): { modelAvailable: boolean; threshold: number; sidecarUrl: string; meta: ReturnType<typeof readMetaSync> } {
   const meta = readMetaSync()
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require('node:fs') as typeof import('node:fs')
   const modelAvailable = fs.existsSync(MODEL_PKL)
   return {
     modelAvailable,

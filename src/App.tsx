@@ -9,6 +9,7 @@ import { TrackStatus } from './pages/TrackStatus'
 import { HelpFaqs } from './pages/HelpFaqs'
 import { AdminLogin } from './pages/AdminLogin'
 import { AdminDashboard } from './pages/AdminDashboard'
+import { CitizenLogin } from './pages/CitizenLogin'
 
 export const App: React.FC = () => {
   return (
@@ -28,6 +29,10 @@ export const App: React.FC = () => {
         {/* Administration Officer Portal Routes */}
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/admin/saathi-console" element={<Navigate to="/admin/dashboard?tab=saathi" replace />} />
+
+        {/* Citizen Login Route */}
+        <Route path="/citizen/login" element={<CitizenLogin />} />
 
         {/* Catch-all fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
